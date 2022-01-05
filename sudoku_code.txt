@@ -1,0 +1,831 @@
+# Your full name : Seongji Kim
+# Netid : seongjk7
+
+.text
+
+##########################################
+#  Part #1 Functions
+##########################################
+
+########## Part #1-A ##########
+checkColors:
+						# a0 = pc_bg, a1 = pc_fg, a2 = gc_bg, a3 = gc_fg, 
+	lw $t0, 0($sp)				# t0 = err_bg
+						# a1 != a3, a1 != a0, a2 != a3, t0 != a0, a1, a2, a3
+	
+	# Checking condition
+	beq $a1, $a3, checkColorsErr
+	beq $a1, $a0, checkColorsErr
+	beq $a2, $a3, checkColorsErr
+	beq $t0, $a0, checkColorsErr
+	beq $t0, $a1, checkColorsErr
+	beq $t0, $a2, checkColorsErr
+	beq $t0, $a3, checkColorsErr
+	
+	move $v1, $t0				# v1 = err_bg, when all conditions are met
+	
+	sll $t0, $a0, 12			# t0 = pc_bg in CColor
+	sll $t1, $a1, 8				# t1 = pc_fg in CColor
+	sll $t2, $a2, 4				# t2 = gc_bg in CColor
+	
+	or $t0, $t0, $t1			# t0 = pc_bg + pc_fg
+	or $t1, $t2, $a3			# t1 = gc_bg + gc_fg
+	or $v0, $t0, $t1			# v0 = pc_bg + pc_fg + gc_bg + gc_fg
+	
+	jr $ra					
+
+checkColorsErr:
+	li $v0, 0xFFFF
+	li $v1, 0xFF
+
+	jr $ra
+
+########## Part #1-B ##########
+setCell:
+						# a0 = int r, a1 = int c, a2 = int val, a3 = byte cellColor
+						# [a0 < 0, a0 >= 9, a1 < 0, a1 >= 9, a2 < -1, a2 > 9] -> Error: return -1
+	# Checking condition
+	bltz $a0, setCellErr
+	bge $a0, 9, setCellErr
+	bltz $a1, setCellErr
+	bge $a1, 9, setCellErr
+	blt $a2, -1, setCellErr
+	bgt $a2, 9, setCellErr
+	
+	# Getting address of the point[r][c]
+	li $t0, 0xFFFF0000			# t0 = start address of the game board
+	li $t1, 18
+	mul $t1, $t1, $a0			# t1 = r * 9 * 2
+	sll $t2, $a1, 1				# t2 = c * 2
+	
+	add $t1, $t1, $t2			# t1 = (c * 2) + (r * 9 * 2)
+	add $t0, $t0, $t1			# t0 = address of the point[r][c]
+	
+	beq $a2, 0, setCellClear
+	beq $a2, -1, setCellColor
+	addi $a2, $a2, 48
+		
+	# 0 <= val <= 9 case
+setCellClear:
+	sb $a2, 0($t0)				# Set the first byte of the cell as the val
+	sb $a3, 1($t0)				# Set the second byte of the cell as the cellColor
+	li $v0, 0
+	j setCellDone
+	
+setCellColor:
+	sb $a3, 1($t0)				# Set the second byte of the cell as the cellColor
+	li $v0, 0
+	j setCellDone
+
+setCellErr:
+	li $v0, -1
+	
+setCellDone:
+	jr $ra
+
+########## Part #1-C ##########
+getCell:
+						# a0 = int r, a1 = int c
+	# Checking condition
+	bltz $a0, getCellErr
+	bge $a0, 9, getCellErr
+	bltz $a1, getCellErr
+	bge $a1, 9, getCellErr
+	
+	# Getting address of the point[r][c]
+	li $t0, 0xFFFF0000			# t0 = start address of the game board
+	li $t1, 18
+	mul $t1, $t1, $a0			# t1 = r * 9 * 2
+	sll $t2, $a1, 1				# t2 = c * 2
+	
+	add $t1, $t1, $t2			# t1 = (c * 2) + (r * 9 * 2)
+	add $t0, $t0, $t1			# t0 = address of the point[r][c]
+	
+	lbu $t1, 0($t0)				# t1 = ASCII character in the point[r][c]
+	lbu $t2, 1($t0)				# t2 = cellColor of the point[r][c]
+	
+	beqz $t1, getCellPassed
+	addi $t1, $t1, -48
+	blez $t1, getCellErr
+	bgt $t1, 9, getCellErr
+	
+getCellPassed:
+	move $v0, $t2
+	move $v1, $t1
+
+	jr $ra
+
+getCellErr:
+	li $v0, 0xFF
+	li $v1, -1
+	
+	jr $ra
+
+########## Part #1-D ##########
+reset:
+						# a0 = CColor curColor, a1 = byte err_bg, a2 = numConflicts
+						# a1 > 0xF -> Error
+	addi $sp, $sp, -32					
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $s6, 24($sp)
+	sw $ra, 28($sp)
+						# s0 = CColor curColor, s1 = byte err_bg, s2 = numConflicts
+						# s3 = r, s4 = c
+						# s5 = curColor's fg color of preset cell, s6 = curColor's fg color of game cell
+	# Initializing
+	move $s0, $a0
+	move $s1, $a1
+	move $s2, $a2
+	li $s3, -1
+	li $s4, -1
+	srl $s5, $s0, 8
+	andi $s5, $s5, 0xF
+	andi $s6, $s0, 0xF
+
+	bgt $s1, 0xF, resetErr			
+	# Check colors if the curColor is valid
+	srl $a0, $s0, 12
+	srl $a1, $s0, 8
+	andi $a1, $a1, 0xF
+	srl $a2, $s0, 4
+	andi $a2, $a2, 0xF
+	andi $a3, $s0, 0xF
+	move $t0, $s1
+	jal checkColors
+	beq $v1, 0xFF, resetErr
+
+	beqz $s2, resetZ			# Case 2) When numConflict == 0, go resetZ
+	bgtz $s2, resetGTZ			# Case 3) When numConflict > 0, go resetGTZ
+
+##### Case 1 #####				When numConflict < 0, resetLTZ
+resetLTZ:
+	addi $s4, $s4, 1			# c++
+	bge $s4, 9, resetDone
+	li $s3, -1
+	
+resetLTZLoop:
+	addi $s3, $s3, 1			# r++
+	bge $s3, 9, resetLTZ
+	move $a0, $s3
+	move $a1, $s4
+	jal getCell
+	
+	move $a0, $s3
+	move $a1, $s4
+	li $a2, 0
+	li $a3, 0xF0
+	jal setCell
+	
+	j resetLTZLoop
+
+##### Case 2 #####				When numConflict == 0, go resetZ
+resetZ:
+	addi $s4, $s4, 1			# c++
+	bge $s4, 9, resetDone
+	li $s3, -1
+	
+resetZLoop:
+	addi $s3, $s3, 1			# r++
+	bge $s3, 9, resetZ
+	move $a0, $s3
+	move $a1, $s4
+	jal getCell
+	
+	andi $t0, $v0, 0xF			# t0 = fg color of the cell.
+	beq $t0, $s5, resetZColorChecked	# fg color checking branch
+	beq $t0, $s6, resetZColorChecked
+	j resetErr	
+	
+resetZColorChecked:
+	andi $t0, $s0, 0xFF			# t0 = Curcolor's game cell color
+	bne $t0, $v0, resetZLoop		# If the cell is not game cell, do nothing and keep looping.
+	move $a0, $s3
+	move $a1, $s4
+	li $a2, 0
+	move $a3, $t0
+	jal setCell
+
+	j resetZLoop
+
+##### Case 3 #####				When numConflict > 0, go resetGTZ
+resetGTZ:
+	addi $s4, $s4, 1			# c++
+	beqz $s2, resetDone			# If there is no left conflict cell, resetDone 
+	bge $s4, 9, resetcheck
+	li $s3, -1
+	
+resetGTZLoop:
+	beqz $s2, resetDone			# If there is no left conflict cell, resetDone 
+	addi $s3, $s3, 1			# r++
+	bge $s3, 9, resetGTZ
+	move $a0, $s3
+	move $a1, $s4
+	jal getCell
+	
+	andi $t0, $v0, 0xF			# t0 = fg color of the cell.
+	beq $t0, $s5, resetGTZColorCheckedPC	# fg color checking, if the cell is preset cell, go to CheckedPC (Preset Cell)
+	beq $t0, $s6, resetGTZColorCheckedGC	# fg color checking, if the cell is game cell, go to CheckedPC (Game Cell)
+	j resetErr
+	
+resetGTZColorCheckedPC:
+	srl $t0, $v0, 4				# t0 = bg color of the cell
+	bne $t0, $s1, resetGTZLoop		# If the cell bg color is not matched with the err_bg, keep looping
+	addi $s2, $s2, -1			# If the err_bg is found, numConflicts-- 
+	
+	srl $t0, $s0, 8				# t0 = byte of preset cell color
+	move $a0, $s3
+	move $a1, $s4
+	move $a2, $v1
+	move $a3, $t0
+	jal setCell
+	
+	j resetGTZLoop
+	
+resetGTZColorCheckedGC:
+	srl $t0, $v0, 4				# t0 = bg color of the cell
+	bne $t0, $s1, resetGTZLoop		# If the cell bg color is not matched with the err_bg, keep looping
+	addi $s2, $s2, -1			# If the err_bg is found, numConflicts-- 
+	
+	andi $t0, $s0, 0xFF			# t0 = byte of game cell color
+	move $a0, $s3
+	move $a1, $s4
+	move $a2, $v1
+	move $a3, $t0
+	jal setCell
+	
+	j resetGTZLoop
+	
+resetcheck:					# if we search all the cells, check if the numConflicts is 0. If not, it is error.
+	beqz $s2, resetDone
+	
+resetErr:
+	li $v0, -1
+	
+resetDone:										
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $s4, 16($sp)
+	lw $s5, 20($sp)
+	lw $s6, 24($sp)
+	lw $ra, 28($sp)
+	addi $sp, $sp, 32
+		
+	jr $ra
+
+##########################################
+#  Part #2 Function
+##########################################
+
+readFile:
+						# a0 = char[] filename, a1 = CColor boardColors
+	addi $sp, $sp, -36
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $s6, 24($sp)
+	sw $s7, 28($sp)
+	sw $ra, 32($sp)
+						# s0 = char[] filename, s1 = CColor boardColors, s2 = file descriptor
+						# s3 = row, s4 = column, s5 = value, s6 = type
+						# s7 = number of unique cell
+	# Initializing
+	move $s0, $a0
+	move $s1, $a1
+	li $s2, 0
+	li $s3, 0
+	li $s4, 0
+	li $s5, 0
+	li $s6, 0
+	li $s7, 0
+	
+	# Reset
+	li $a0, 0xF6F0				# any value for curColor
+	li $a1, 0x9				# any value for err_bg
+	li $a2, -1
+	jal reset
+	bltz $v0, readFileErr
+	
+	# Open file
+	move $a0, $s0
+	li $a1, 0
+	li $a2, 0
+	li $v0, 13
+	syscall
+	move $s2, $v0
+	bltz $s2, readFileErr
+	
+	# Read from the file
+readFileLoop:
+	move $a0, $s2
+	addi $sp, $sp, -8
+	move $a1, $sp
+	addi $sp, $sp, 8
+	li $a2, 5
+	li $v0, 14
+	syscall
+	
+	beqz $v0, readFileDone			# if 0, end-of-file
+	bltz $v0, readFileErr			# if negative, Error.
+	
+	# Getting board information
+	addi $sp, $sp, -8
+	move $a0, $sp
+	addi $sp, $sp, 8
+	li $a1, 0
+	jal getBoardInfo
+	bltz $v0, readFileErr			# if negative, Error.
+	
+	move $s3, $v0				# s3 = row
+	move $s4, $v1				# s4 = column
+	
+	addi $sp, $sp, -8
+	move $a0, $sp
+	addi $sp, $sp, 8
+	li $a1, 1
+	jal getBoardInfo
+	bltz $v0, readFileErr			# if negative, Error.
+	
+	move $s5, $v0				# s5 = value
+	move $s6, $v1				# s6 = type
+	
+	# Check if it is unique cell
+	move $a0, $s3
+	move $a1, $s4
+	jal getCell
+	bltz $v1, readFileErr			# If getCell return error, Error
+	beqz $v1, addUnique			# If v1 = 0, it means the cell is unique
+
+	# Set cell with the board information.
+readFileSet:
+	beq $s6, 80, readFileSetPC		# If the type is 80, set the cell as preset cell
+	# Set the cell as game cell
+	move $a0, $s3
+	move $a1, $s4
+	move $a2, $s5
+	andi $a3, $s1, 0xFF
+	jal setCell
+	bltz $v0, readFileErr			# If setCell return error, Error
+	
+	j readFileLoop
+
+readFileSetPC:
+	# Set the cell as preset cell
+	move $a0, $s3
+	move $a1, $s4
+	move $a2, $s5
+	srl $a3, $s1, 8
+	jal setCell
+	bltz $v0, readFileErr			# If setCell return error, Error
+	
+	j readFileLoop	
+
+addUnique:
+	addi $s7, $s7, 1
+	j readFileSet	
+	
+readFileErr:
+	li $s7, -1
+
+readFileDone:
+	move $a0, $s2				# Close the file.
+	li $v0, 16
+	syscall
+	
+	move $v0, $s7
+	
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $s4, 16($sp)
+	lw $s5, 20($sp)
+	lw $s6, 24($sp)
+	lw $s7, 28($sp)
+	lw $ra, 32($sp)
+	addi $sp, $sp, 36
+	
+	jr $ra
+
+##########################################
+#  Part #3 Functions
+##########################################
+
+rowColCheck:
+						# a0 = int row, a1 = int col, a2 = int value, a3 = int flags
+	addi $sp, $sp, -20
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $ra, 16($sp)
+						# s0 = checkRow, s1 = checkCol
+						# s2 = a0 = int row, s3 = a1 = int col
+	# Initializing
+	li $s0, -1
+	li $s1, -1
+	move $s2, $a0
+	move $s3, $a1
+	
+	# Error check.
+	bltz $a0, rowColCheckErr
+	bge $a0, 9, rowColCheckErr
+	bltz $a1, rowColCheckErr
+	bge $a1, 9, rowColCheckErr
+	blt $a2, -1, rowColCheckErr
+	bgt $a2, 9, rowColCheckErr
+	
+	bnez $a3, rowColCheckC			# if (flag != 0) check col 
+	move $s0, $a0
+	
+rowColCheckRLoop:
+	addi $s1, $s1, 1
+	bge $s1, 9, rowColCheckErr		# If not found, Error
+	beq $s1, $s3, rowColCheckRLoop		# If checking cell is same with the original cell, pass.
+	move $a0, $s0
+	move $a1, $s1
+	jal getCell
+	
+	bne $a2, $v1, rowColCheckRLoop		# If the cell value != value, keep looping.
+	j rowColCheckDone
+	
+rowColCheckC:
+	move $s1, $a1
+
+rowColCheckCLoop:
+	addi $s0, $s0, 1
+	bge $s0, 9, rowColCheckErr
+	beq $s0, $s2, rowColCheckCLoop		# If checking cell is same with the original cell, pass.
+	move $a0, $s0
+	move $a1, $s1
+	jal getCell
+	
+	bne $a2, $v1, rowColCheckCLoop
+	j rowColCheckDone
+	
+rowColCheckErr:
+	li $s0, -1
+	li $s1, -1
+
+rowColCheckDone:
+	move $v0, $s0
+	move $v1, $s1
+
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $ra, 16($sp)
+	addi $sp, $sp, 20
+	
+	jr $ra
+
+squareCheck:
+						# a0 = int row, a1 = int col, a2 = int value, a3 = int flags
+	addi $sp, $sp, -28
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $ra, 24($sp)
+						# s0 = check row, s1 = check col
+						# s2 = a0 = int row, s3 = a1 = int col
+						# s4 = counter, $s5 = saved start column
+	# Initializing
+	move $s2, $a0
+	move $s3, $a1
+	li $s4, 0
+	
+	li $t0, 3				# to divide and multiply the row and column
+	divu $a0, $t0				# If a0 = 0,1,2 -> s0 = 0, if a0 = 3,4,5 -> s0 = 1, if a0 = 6,7,8 -> s0 = 2
+	mflo $s0
+	mul $s0, $s0, $t0			# Starting row -> if s0 = 0 -> s0 = 0, if s0 = 1 -> s0 = 3, if s0 = 2 -> s0 = 6
+	addi $s0, $s0, -1
+
+	divu $a1, $t0				# Same with above.
+	mflo $s1
+	mul $s1, $s1, $t0
+	addi $s1, $s1, -1
+	move $s5, $s1			
+	
+	# Error check.
+	bltz $a0, squareCheckErr
+	bge $a0, 9, squareCheckErr
+	bltz $a1, squareCheckErr
+	bge $a1, 9, squareCheckErr
+	blt $a2, -1, squareCheckErr
+	bgt $a2, 9, squareCheckErr
+	
+	# Search conflict cell
+squareCheckR:
+	addi $s0, $s0, 1
+	beq $s4, 9, squareCheckErr
+	move $s1, $s5
+	
+squareCheckLoop:
+	addi $s1, $s1, 1
+	addi $s4, $s4, 1			# Counter++
+	beq $s0, $s2, isThisSameCell
+
+squareCheckLoop2:
+	move $a0, $s0
+	move $a1, $s1
+	jal getCell
+	
+	beq $a2, $v1, squareCheckDone
+	li $t0, 3
+	div $s4, $t0				# Counter / 3
+	mfhi $t0				# Get remainder
+	beqz $t0, squareCheckR			# If remainder == 0 -> increment Row
+	j squareCheckLoop			# Else -> increment Col
+
+isThisSameCell:
+	bne $s1, $s3, squareCheckLoop2
+	li $t0, 3
+	div $s4, $t0				# Counter / 3
+	mfhi $t0				# Get remainder
+	beqz $t0, squareCheckR			# If remainder == 0 -> increment Row
+	j squareCheckLoop			# Else -> increment Col
+	
+squareCheckErr:
+	li $s0, -1
+	li $s1, -1
+	
+squareCheckDone:
+	move $v0, $s0
+	move $v1, $s1
+	
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $s4, 16($sp)
+	lw $s5, 20($sp)
+	lw $ra, 24($sp)
+	addi $sp, $sp, 28
+	
+	jr $ra
+
+check:
+	lw $t0, 0($sp)
+						# a0 = int row, a1 = int col, a2 = int value, a3 = byte err_color, t0 = int flag
+	addi $sp, $sp, -28
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $ra, 24($sp)
+	
+	# Error check
+	bltz $a0, checkErr
+	bge $a0, 9, checkErr
+	bltz $a1, checkErr
+	bge $a1, 9, checkErr
+	blt $a2, -1, checkErr
+	bgt $a2, 9, checkErr
+	bgt $a3, 0xF, checkErr
+						# s0 = int row, s1 = int col, s2 = int value, s3 = err_color, s4 = flag, s5 = return value
+	# Initialize
+	move $s0, $a0
+	move $s1, $a1
+	move $s2, $a2
+	move $s3, $a3
+	move $s4, $t0
+	li $s5, 0
+	
+	sll $s3, $s3, 4				# err_color is bg color, Hence, move the bits to place of bg color bits
+	
+	beqz $t0, checkFlag0a
+	
+checkFlag1a:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	li $a3, 0
+	jal rowColCheck
+	
+	beq $v0, -1, checkFlag1b
+	addi $s5, $s5, 1
+	move $a0, $v0				# To check the conflict cell
+	move $a1, $v1
+	jal getCell
+	
+	andi $t0, $v0, 0xF			# t0 = fg color of the cell
+	or $a3, $t0, $s3			# a3 = cell color.
+						# For now, a0 = conflict cell row, a1 = conflict cell col, a2 = value, a3 = cell color
+	jal setCell
+
+checkFlag1b:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	li $a3, 1
+	jal rowColCheck
+	
+	beq $v0, -1, checkFlag1c
+	addi $s5, $s5, 1
+	move $a0, $v0				# To check the conflict cell
+	move $a1, $v1
+	jal getCell
+	
+	andi $t0, $v0, 0xF			# t0 = fg color of the cell
+	or $a3, $t0, $s3			# a3 = cell color.
+						# For now, a0 = conflict cell row, a1 = conflict cell col, a2 = value, a3 = cell color
+	jal setCell
+	
+checkFlag1c:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	jal squareCheck
+	
+	beq $v0, -1, checkDone
+	addi $s5, $s5, 1
+	move $a0, $v0
+	move $a1, $v1
+	jal getCell
+	
+	andi $t0, $v0, 0xF
+	or $a3, $t0, $s3
+	
+	jal setCell
+	j checkDone
+		
+checkFlag0a:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	li $a3, 0
+	jal rowColCheck
+	
+	beq $v0, -1, checkFlag0b
+	addi $s5, $s5, 1
+	
+checkFlag0b:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	li $a3, 1
+	jal rowColCheck
+	
+	beq $v0, -1, checkFlag0c
+	addi $s5, $s5, 1	
+	
+checkFlag0c:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	jal squareCheck
+	
+	beq $v0, -1, checkDone
+	addi $s5, $s5, 1
+	j checkDone
+	
+checkErr:
+	li $s5, -1
+
+checkDone:
+	move $v0, $s5
+	
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $s4, 16($sp)
+	lw $s5, 20($sp)
+	lw $ra, 24($sp)
+	addi $sp, $sp, 28
+
+	jr $ra
+
+makeMove:
+						# a0 = char[] move, a1 = CColor playerColors, a2 = byte err_color
+	addi $sp, $sp, -36
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+	sw $s3, 12($sp)
+	sw $s4, 16($sp)
+	sw $s5, 20($sp)
+	sw $s6, 24($sp)
+	sw $s7, 28($sp)
+	sw $ra, 32($sp)
+						# s3 = a0 = move, s4 = a1 = playerColors, s5 = a2 = err_color
+						# s6 = First return value, s7 = Second return value
+	# Initialize
+	move $s3, $a0
+	move $s4, $a1
+	move $s5, $a2
+	li $s6, 0
+	li $s7, 0
+	
+	# Body
+	li $a1, 0
+	jal getBoardInfo
+						# s0 = row, s1 = col
+	move $s0, $v0
+	move $s1, $v1
+	
+	bne $s0, -1, makeMoveBodyB
+	li $s6, -1
+	li $s7, 0
+	j makeMoveDone
+	
+makeMoveBodyB:
+	move $a0, $s3
+	li $a1, 1
+	jal getBoardInfo
+						# s2 = moveValue, s3 = type
+	move $s2, $v0
+	move $s3, $v1 
+	
+	bne $s2, -1, makeMoveBodyC
+	li $s6, -1
+	li $s7, 0
+	j makeMoveDone
+	
+makeMoveBodyC:
+	move $a0, $s0
+	move $a1, $s1
+	jal getCell
+						# t0 = cellColor, t1 = curvalue
+	move $t0, $v0
+	move $t1, $v1
+	bne $t1, $s2, makeMoveBodyD
+	li $s6, 0
+	li $s7, 0
+	j makeMoveDone
+	
+makeMoveBodyD:
+	srl $t1, $s4, 8				# t1 = playerColors.presetCell
+	bne $t0, $t1, makeMoveBodyE
+	li $s6, -1
+	li $s7, 0
+	j makeMoveDone
+	
+makeMoveBodyE:
+	bnez $s2, makeMoveBodyF
+	move $a0, $s0
+	move $a1, $s1
+	li $a2, 0
+	andi $a3, $s4, 0xFF			# a3 = playerColors.gameCell
+	jal setCell
+	
+	li $s6, 0
+	li $s7, 1
+	j makeMoveDone
+	
+makeMoveBodyF:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	move $a3, $s5
+	addi $sp, $sp, -4
+	li $t0, 1
+	sw $t0, 0($sp)
+	jal check
+	addi $sp, $sp, 4
+	beqz $v0, makeMoveBodyG
+	li $s6, -1
+	move $s7, $v0
+	j makeMoveDone
+	
+makeMoveBodyG:
+	move $a0, $s0
+	move $a1, $s1
+	move $a2, $s2
+	andi $a3, $s4, 0xFF
+	jal setCell
+	
+	li $s6, 0
+	li $s7, -1
+
+makeMoveDone:
+	move $v0, $s6
+	move $v1, $s7
+	
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	lw $s3, 12($sp)
+	lw $s4, 16($sp)
+	lw $s5, 20($sp)
+	lw $s6, 24($sp)
+	lw $s7, 28($sp)
+	lw $ra, 32($sp)
+	addi $sp, $sp, 36
+		
+	jr $ra
